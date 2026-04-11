@@ -129,7 +129,7 @@ const GameBoard = ({ sala: salaProp, role }) => {
         return () => clearInterval(timer);
     }, [juegoActual?.state, role, procesarResultadosRonda, juegoActual?.id, juegoActual?.type, juegoActual?.result]);
 
-    // --- 4. CARGA DE RESULTADOS ---
+    // --- 4. CARGA DE RESULTADOS --
     useEffect(() => {
         const cargarResultados = async () => {
             if (juegoActual?.state === GameState.END || juegoActual?.state === GameState.RESULT) {
