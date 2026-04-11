@@ -3,34 +3,48 @@ import { supabase } from "../../supabase";
 import { GameState } from "../../constants/gameStates";
 
 const PlayerLetrasScreen = ({ juego, jugador }) => {
-  const [letrasDisponibles, setLetrasDisponibles] = useState([]);
+  // Ahora manejamos un solo array de objetos para las letras de la base
+  const [letrasSource, setLetrasSource] = useState([]);
   const [palabraActual, setPalabraActual] = useState([]);
   const [mejorPalabraEnviada, setMejorPalabraEnviada] = useState("");
   const [enviando, setEnviando] = useState(false);
 
   // Inicializar letras cuando empieza el juego
   useEffect(() => {
-    // Convertimos el array de strings en objetos con un ID único para evitar 
-    // problemas si hay letras repetidas (ej. dos 'A')
-    const letrasObj = juego.data.map((letra, index) => ({ id: index, char: letra }));
-    setLetrasDisponibles(letrasObj);
+    const letrasObj = juego.data.map((letra, index) => ({ 
+      id: index, 
+      char: letra,
+      usada: false // Nueva propiedad para controlar el bloqueo
+    }));
+    setLetrasSource(letrasObj);
     setPalabraActual([]);
   }, [juego.data]);
 
   const seleccionarLetra = (letraObj) => {
-    setLetrasDisponibles(prev => prev.filter(l => l.id !== letraObj.id));
+    if (letraObj.usada) return;
+
+    // Marcamos la letra como usada en el panel inferior
+    setLetrasSource(prev => prev.map(l => 
+      l.id === letraObj.id ? { ...l, usada: true } : l
+    ));
+    
+    // La añadimos a la palabra de arriba
     setPalabraActual(prev => [...prev, letraObj]);
   };
 
   const quitarLetra = (letraObj) => {
+    // La quitamos de la palabra de arriba
     setPalabraActual(prev => prev.filter(l => l.id !== letraObj.id));
-    setLetrasDisponibles(prev => [...prev, letraObj].sort((a, b) => a.id - b.id)); // Mantenemos el orden original
+    
+    // La desbloqueamos en el panel inferior
+    setLetrasSource(prev => prev.map(l => 
+      l.id === letraObj.id ? { ...l, usada: false } : l
+    ));
   };
 
   const enviarPalabra = async () => {
     const palabraString = palabraActual.map(l => l.char).join('');
     
-    // Solo enviamos si es mejor que la anterior
     if (palabraString.length <= mejorPalabraEnviada.length) {
       alert("¡Ya has enviado una palabra de igual o mayor longitud!");
       return;
@@ -38,7 +52,6 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
 
     setEnviando(true);
     try {
-      // Usamos el match para ver si este jugador ya envió algo en esta ronda
       const { data: registroPrevio } = await supabase
         .from('Result_Game')
         .select('id')
@@ -47,10 +60,8 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
         .single();
 
       if (registroPrevio) {
-        // Actualizar
         await supabase.from('Result_Game').update({ result_string: palabraString }).eq('id', registroPrevio.id);
       } else {
-        // Insertar nuevo
         await supabase.from('Result_Game').insert([{
           game: juego.id,
           player: jugador.id,
@@ -59,8 +70,9 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
         }]);
       }
       setMejorPalabraEnviada(palabraString);
-      // Limpiamos el tablero para que pueda seguir buscando
-      setLetrasDisponibles(juego.data.map((letra, index) => ({ id: index, char: letra })));
+      
+      // Resetear el tablero: todas las letras vuelven a estar disponibles (usada: false)
+      setLetrasSource(prev => prev.map(l => ({ ...l, usada: false })));
       setPalabraActual([]);
     } catch (error) {
       console.error("Error al enviar palabra:", error);
@@ -70,7 +82,12 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
   };
 
   if (juego.state === GameState.RESULT) {
-    return <div className="text-center mt-5"><h3>¡Tiempo Finalizado!</h3><p>Tu mejor palabra enviada: <strong>{mejorPalabraEnviada || "Ninguna"}</strong></p></div>;
+    return (
+      <div className="text-center mt-5">
+        <h3>¡Tiempo Finalizado!</h3>
+        <p>Tu mejor palabra enviada: <strong>{mejorPalabraEnviada || "Ninguna"}</strong></p>
+      </div>
+    );
   }
 
   return (
@@ -82,19 +99,33 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
         <h6 className="text-muted">Tu Palabra:</h6>
         <div className="d-flex justify-content-center flex-wrap gap-2">
           {palabraActual.map(letra => (
-            <button key={letra.id} onClick={() => quitarLetra(letra)} className="btn btn-primary btn-lg fs-3 fw-bold p-3">
+            <button 
+              key={`selected-${letra.id}`} 
+              onClick={() => quitarLetra(letra)} 
+              className="btn btn-primary btn-lg fs-3 fw-bold p-3 animate__animated animate__bounceIn"
+            >
               {letra.char}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Letras disponibles */}
+      {/* Letras disponibles (Estáticas, no se mueven) */}
       <div className="mb-5">
         <h6 className="text-muted mb-3">Letras Disponibles:</h6>
         <div className="d-flex justify-content-center flex-wrap gap-2">
-          {letrasDisponibles.map(letra => (
-            <button key={letra.id} onClick={() => seleccionarLetra(letra)} className="btn btn-outline-secondary btn-lg fs-3 fw-bold p-3">
+          {letrasSource.map(letra => (
+            <button 
+              key={`source-${letra.id}`} 
+              onClick={() => seleccionarLetra(letra)} 
+              disabled={letra.usada}
+              className={`btn btn-lg fs-3 fw-bold p-3 transition-all ${
+                letra.usada 
+                ? "btn-light text-muted opacity-25" 
+                : "btn-outline-secondary shadow-sm"
+              }`}
+              style={{ width: "60px", minHeight: "70px" }}
+            >
               {letra.char}
             </button>
           ))}
@@ -111,7 +142,9 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
       </button>
 
       {mejorPalabraEnviada && (
-        <p className="text-success mt-3 fw-bold">Palabra asegurada: {mejorPalabraEnviada}</p>
+        <p className="text-success mt-3 fw-bold animate__animated animate__fadeIn">
+           ✅ Palabra asegurada: {mejorPalabraEnviada}
+        </p>
       )}
     </div>
   );
