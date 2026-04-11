@@ -15,7 +15,7 @@ const RoomQRCode = ({ code }) => {
           includeMargin={false}
           imageSettings={{
             // Opcional: Puedes poner un pequeño icono en el centro si quieres
-            src: "/vite.svg",
+            src: "/cyl.png",
             x: undefined,
             y: undefined,
             height: 30,
