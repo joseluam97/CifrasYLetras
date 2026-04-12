@@ -79,11 +79,11 @@ const GameBoard = ({ sala: salaProp, role }) => {
     // --- 3. CRONÓMETRO ---
     useEffect(() => {
         let timer;
-        
+
         // 1. Cuando el juego se crea, fijamos el tiempo inicial según el tipo
         if (juegoActual?.state === GameState.CREATED) {
-            const tiempoInicial = juegoActual.type === GameType.CIFRAS 
-                ? TIME_PER_ROUND_NUMBERS 
+            const tiempoInicial = juegoActual.type === GameType.CIFRAS
+                ? TIME_PER_ROUND_NUMBERS
                 : TIME_PER_ROUND_LETTERS;
             setTiempoRestante(tiempoInicial);
         }
@@ -192,13 +192,26 @@ const GameBoard = ({ sala: salaProp, role }) => {
         // PODIO FINAL
         if (sala?.state === RoomState.FINISHED) {
             return (
-                <div className="container-fluid text-center mt-3 mt-md-5 animate__animated animate__zoomIn px-2">
+                // Añadimos d-flex flex-column align-items-center para centrar todo el bloque
+                <div className="container-fluid text-center mt-3 mt-md-5 animate__animated animate__zoomIn px-2 d-flex flex-column align-items-center">
                     <h1 className="fw-bold text-primary mb-4" style={{ fontSize: "clamp(2.5rem, 6vw, 4rem)" }}>🏆 PODIO FINAL</h1>
-                    <div className="row justify-content-center mx-0">
+
+                    {/* Cambiamos el 'row' por una columna flexible con gap (espacio) entre los elementos */}
+                    <div className="w-100 d-flex flex-column align-items-center gap-3">
                         {jugadoresConectados.map((jugador, index) => (
-                            <div key={jugador.id} className={`col-12 col-md-8 col-lg-6 mb-2 p-3 p-md-4 rounded-pill shadow-sm d-flex justify-content-between align-items-center ${index === 0 ? 'bg-warning border border-4 border-white' : 'bg-white'}`}>
-                                <span className="fs-3 fs-md-2 fw-bold text-truncate" style={{ maxWidth: "60%" }}>#{index + 1} {jugador.name}</span>
-                                <span className="fs-3 fs-md-2 fw-bold text-end">{jugador.points} pts</span>
+                            <div
+                                key={jugador.id}
+                                // Quitamos los col-12 col-md-8 y ponemos w-100
+                                className={`w-100 p-3 p-md-4 rounded-pill shadow-sm d-flex justify-content-between align-items-center ${index === 0 ? 'bg-warning border border-4 border-white' : 'bg-white'}`}
+                                // Fijamos un ancho máximo para que la píldora no mida 2 metros en una TV gigante
+                                style={{ maxWidth: "800px" }}
+                            >
+                                <span className="fs-3 fs-md-2 fw-bold text-truncate" style={{ maxWidth: "60%" }}>
+                                    #{index + 1} {jugador.name}
+                                </span>
+                                <span className="fs-3 fs-md-2 fw-bold text-end">
+                                    {jugador.points} pts
+                                </span>
                             </div>
                         ))}
                     </div>

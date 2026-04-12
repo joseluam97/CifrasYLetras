@@ -91,7 +91,7 @@ const CreateRoom = () => {
               type="range"
               className="form-range"
               id="totalRounds"
-              min="1" max="12" step="1"
+              min="1" max="15" step="1"
               value={totalRounds}
               onChange={(e) => setTotalRounds(parseInt(e.target.value))}
             />

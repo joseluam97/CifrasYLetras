@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../../supabase.js'; // Asegúrate de que la ruta a supabase.js es correcta
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { verificarPalabra } from '../../utils/dictionaryValidator';
+import { verificarPalabraRAE } from '../../utils/dictionaryValidator';
 import { GameState, GameType, AppRole, RoomState } from '../../constants/gameStates';
 import { WORDS_LETTERS_COMPLETE } from '../../constants/listWordsStatic.js';
 
@@ -111,17 +111,16 @@ export const useGameStore = create(
                     return { success: false, error: error.message };
                 }
             },
-
             procesarResultadosRonda: async (gameId, tipoJuego, valorObjetivo) => {
                 set({ isLoading: true });
                 try {
-                    // 1. Bloqueamos envíos
-                    await supabase.from('Games').update({ state: 'RESULT' }).eq('id', gameId);
+                    // 1. Bloqueamos envíos cambiando el estado de la partida a RESULT (Calculando)
+                    await supabase.from('Games').update({ state: GameState.RESULT }).eq('id', gameId);
 
-                    // Tiempo de cortesía para peticiones latentes
+                    // Tiempo de cortesía para permitir que las peticiones latentes (auto-envíos del móvil) lleguen
                     await new Promise(resolve => setTimeout(resolve, 2000));
 
-                    // 2. Traemos todas las respuestas
+                    // 2. Traemos todas las respuestas registradas en la base de datos para este juego
                     const { data: respuestas, error } = await supabase
                         .from('Result_Game')
                         .select('*, Player(id, name, points)')
@@ -129,8 +128,11 @@ export const useGameStore = create(
 
                     if (error) throw error;
 
+                    // 3. Comprobación de seguridad VITAL: Si no hay respuestas, terminamos la ronda limpiamente.
                     if (!respuestas || respuestas.length === 0) {
-                        await supabase.from('Games').update({ state: 'END' }).eq('id', gameId);
+                        console.log("Nadie respondió en esta ronda.");
+                        // Forzamos el estado a END para desbloquear la UI
+                        await supabase.from('Games').update({ state: GameState.END }).eq('id', gameId);
                         set({ isLoading: false });
                         return { success: true, message: "Sin respuestas" };
                     }
@@ -146,7 +148,19 @@ export const useGameStore = create(
                         let respuestasValidas = [];
 
                         for (const resp of respuestas) {
-                            const isValid = await verificarPalabra(resp.result_string);
+                            // Seguridad extra: Si el jugador envió vacío o nulo, lo rechazamos directamente
+                            if (!resp.result_string || resp.result_string.trim() === '') {
+                                idsRechazados.push(resp.id);
+                                continue;
+                            }
+
+                            // Quitar tildes para verificar correctamente (Opción 2 aplicada aquí por seguridad)
+                            const palabraLimpia = resp.result_string.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+
+                            // Asumo que verificarPalabraRAE espera un string sin tildes o lo maneja internamente.
+                            // Si lo maneja internamente, puedes pasarle resp.result_string directamente.
+                            const isValid = await verificarPalabraRAE(palabraLimpia);
+
                             if (isValid) {
                                 respuestasValidas.push(resp);
                             } else {
@@ -155,8 +169,8 @@ export const useGameStore = create(
                         }
 
                         if (respuestasValidas.length > 0) {
-                            const maxLongitud = Math.max(...respuestasValidas.map(r => r.result_string.length));
-                            ganadores = respuestasValidas.filter(r => r.result_string.length === maxLongitud);
+                            const maxLongitud = Math.max(...respuestasValidas.map(r => r.result_string.trim().length));
+                            ganadores = respuestasValidas.filter(r => r.result_string.trim().length === maxLongitud);
                             puntosOtorgados = maxLongitud;
                         }
                     }
@@ -164,21 +178,26 @@ export const useGameStore = create(
                     // LÓGICA PARA CIFRAS
                     // ==========================================
                     else {
-                        const conDiferencia = respuestas.map(r => ({
-                            ...r,
-                            diferencia: Math.abs(r.result_numeric - valorObjetivo)
-                        }));
+                        // Seguridad extra: Filtramos respuestas que no tengan un número válido
+                        const respuestasNumericasValidas = respuestas.filter(r => r.result_numeric !== null && r.result_numeric !== undefined);
 
-                        const minimaDiferencia = Math.min(...conDiferencia.map(r => r.diferencia));
-                        ganadores = conDiferencia.filter(r => r.diferencia === minimaDiferencia);
-                        puntosOtorgados = (minimaDiferencia === 0) ? 10 : 5;
+                        if (respuestasNumericasValidas.length > 0) {
+                            const conDiferencia = respuestasNumericasValidas.map(r => ({
+                                ...r,
+                                diferencia: Math.abs(r.result_numeric - valorObjetivo)
+                            }));
+
+                            const minimaDiferencia = Math.min(...conDiferencia.map(r => r.diferencia));
+                            ganadores = conDiferencia.filter(r => r.diferencia === minimaDiferencia);
+                            puntosOtorgados = (minimaDiferencia === 0) ? 10 : 5;
+                        }
                     }
 
                     // ==========================================
                     // ACTUALIZACIÓN DE PUNTOS (PUNTOS GANADOS Y TOTALES)
                     // ==========================================
 
-                    // A. Marcamos los rechazados (letras inventadas)
+                    // A. Marcamos los rechazados (letras inventadas o palabras vacías)
                     if (idsRechazados.length > 0) {
                         await supabase.from('Result_Game')
                             .update({ reject_string: true, points_win: 0 })
@@ -211,8 +230,8 @@ export const useGameStore = create(
                         }
                     }
 
-                    // 3. Finalizar ronda definitivamente
-                    await supabase.from('Games').update({ state: 'END' }).eq('id', gameId);
+                    // 3. Finalizar ronda definitivamente (SIEMPRE se ejecuta si no retornamos antes por falta de respuestas)
+                    await supabase.from('Games').update({ state: GameState.END }).eq('id', gameId);
 
                     set({ isLoading: false });
 
@@ -224,6 +243,8 @@ export const useGameStore = create(
 
                 } catch (err) {
                     console.error("Error procesando resultados:", err);
+                    // IMPORTANTE: Incluso si hay un error crítico, debemos intentar desbloquear la partida
+                    await supabase.from('Games').update({ state: GameState.END }).eq('id', gameId);
                     set({ isLoading: false });
                     return { success: false, error: err.message };
                 }
