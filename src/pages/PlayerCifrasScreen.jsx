@@ -97,14 +97,23 @@ const PlayerCifrasScreen = ({ juego, jugador, tiempoRestante }) => {
     setOperando2(null);
   };
 
-  // Función clave: Busca la mejor ficha actual en el panel del jugador
+  // Función clave: Busca la mejor ficha actual en el panel del jugador (incluyendo la calculadora)
   const obtenerMejorCifraActual = () => {
-    if (fichasDisponibles.length === 0) return 0;
-    return fichasDisponibles.reduce((mejor, actual) => {
+    // 1. Recopilamos TODAS las fichas que el jugador tiene en la pantalla
+    const todasLasFichas = [...fichasDisponibles];
+    if (operando1) todasLasFichas.push(operando1);
+    if (operando2) todasLasFichas.push(operando2);
+
+    // Si por algún motivo extremo no hay nada, devolvemos 0
+    if (todasLasFichas.length === 0) return 0;
+
+    // 2. Comparamos para encontrar la más cercana al objetivo
+    return todasLasFichas.reduce((mejor, actual) => {
       const difMejor = Math.abs(mejor - objetivo);
       const difActual = Math.abs(actual.valor - objetivo);
+      
       return difActual < difMejor ? actual.valor : mejor;
-    }, fichasDisponibles[0].valor);
+    }, todasLasFichas[0].valor);
   };
 
   const mejorActual = obtenerMejorCifraActual();
