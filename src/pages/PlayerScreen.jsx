@@ -184,24 +184,24 @@ const PlayerScreen = () => {
   // VISTA: Descanso o Resultados de Ronda
   if (juegoActual.state === GameState.END) {
     return (
-      <div className="bg-light vh-100 d-flex flex-column pt-4 px-2">
+      <div className="bg-light vh-100 d-flex flex-column pt-4 px-2 pb-0">
 
-        {/* Cabecera del móvil */}
-        <div className="text-center animate__animated animate__fadeIn mb-3">
+        {/* Cabecera protegida para que no se aplaste */}
+        <div className="text-center animate__animated animate__fadeIn mb-3 flex-shrink-0">
           <h2 className="fw-bold text-primary mb-1">¡Descanso!</h2>
           <p className="text-muted small mb-0">Esperando al Admin para la siguiente ronda...</p>
         </div>
 
-        {/* Contenedor flexible para la tabla (se lleva el espacio restante) */}
-        <div className="flex-grow-1 overflow-auto">
+        {/* Contenedor central. overflow-hidden aquí es VITAL para que la tabla hija haga su propio scroll */}
+        <div className="flex-grow-1 overflow-hidden d-flex flex-column pb-3">
           <QualifyingRound
             resultadosRonda={resultadosRonda}
             juegoActual={juegoActual}
-            compact={true}
           />
         </div>
 
-        <GlobalScoreboard salaId={sala.id} />
+        {/* Marcador al que AHORA SÍ le decimos que está en móvil */}
+        <GlobalScoreboard salaId={sala.id} compact={true} />
       </div>
     );
   }
@@ -209,14 +209,17 @@ const PlayerScreen = () => {
   // VISTA: Preparación
   if (juegoActual.state === GameState.CREATED) {
     return (
-      <div className="bg-light vh-100 d-flex flex-column pt-4 px-2">
-        <div className="container mt-5 text-center animate__animated animate__pulse animate__infinite">
+      <div className="bg-light vh-100 d-flex flex-column pt-4 px-2 pb-0">
+
+        {/* Usamos flex-grow-1 para centrar el contenido en el espacio disponible */}
+        <div className="flex-grow-1 d-flex flex-column justify-content-center container text-center animate__animated animate__pulse animate__infinite">
           <h1 className="fw-bold text-warning">¡PREPÁRATE!</h1>
           <h3 className="mt-3">Ronda de {juegoActual.type}</h3>
           <p className="text-muted mt-4">La ronda está a punto de empezar...</p>
-
         </div>
-        <GlobalScoreboard salaId={sala.id} />
+
+        {/* Marcador en modo móvil */}
+        <GlobalScoreboard salaId={sala.id} compact={true} />
       </div>
     );
   }
