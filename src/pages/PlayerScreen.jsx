@@ -6,17 +6,19 @@ import { GameState, GameType, RoomState } from "../../constants/gameStates";
 import PlayerLetrasScreen from "./PlayerLetrasScreen.jsx";
 import PlayerCifrasScreen from "./PlayerCifrasScreen.jsx";
 import GameBoard from "../components/GameBoard.jsx";
+import QualifyingRound from "../components/QualifyingRound.jsx";
+import GlobalScoreboard from "../components/GlobalScoreboard.jsx";
 
 const PlayerScreen = () => {
-  const { roomCode } = useParams(); // Este es el 'code' de la URL
+  const { roomCode } = useParams();
   const { jugadorActual } = useGameStore();
 
   const [sala, setSala] = useState(null);
   const [juegoActual, setJuegoActual] = useState(null);
+  const [resultadosRonda, setResultadosRonda] = useState([]); // <-- 2. Estado para los resultados
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Si no hay jugador (ni en store ni en persistencia), no hacemos nada
     if (!jugadorActual) {
       setLoading(false);
       return;
@@ -24,12 +26,10 @@ const PlayerScreen = () => {
 
     const fetchDatos = async () => {
       try {
-        // 1. Obtener la sala (Asegúrate que la columna es 'code')
-        console.log("Buscando sala con código:", roomCode);
         const { data: roomData, error: roomError } = await supabase
           .from('Room')
           .select('*')
-          .eq('code', roomCode) // CAMBIADO: Antes tenías codigo_sala
+          .eq('code', roomCode)
           .single();
 
         if (roomError) throw roomError;
@@ -37,7 +37,6 @@ const PlayerScreen = () => {
         if (roomData) {
           setSala(roomData);
 
-          // 2. Obtener el juego actual si hay rondas activas
           if (roomData.current_rounds > 0) {
             const { data: gameData } = await supabase
               .from('Games')
@@ -58,16 +57,12 @@ const PlayerScreen = () => {
 
     fetchDatos();
 
-    // 3. Suscripción a la SALA (Para detectar FINISHED o cambios de ronda)
     const roomChannel = supabase.channel(`room-changes-${roomCode}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'Room', filter: `code=eq.${roomCode}` },
         (payload) => {
-          console.log("Cambio en sala detectado:", payload.new);
           setSala(payload.new);
-
-          // Si la sala se resetea (vuelve a 0 rondas), limpiamos el juego actual localmente
           if (payload.new.current_rounds === 0) {
             setJuegoActual(null);
           }
@@ -75,18 +70,14 @@ const PlayerScreen = () => {
       )
       .subscribe();
 
-    // 4. Suscripción a los JUEGOS
     const gamesChannel = supabase.channel(`game-changes-${roomCode}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'Games' },
         (payload) => {
-          // Si el evento es un borrado (DELETE), el payload.new será nulo
           if (payload.eventType === 'DELETE') {
             setJuegoActual(null);
           } else {
-            // Solo actualizamos si el juego pertenece a nuestra sala id
-            // Si sala no está cargado aún, solo seteamos el nuevo
             setJuegoActual(payload.new);
           }
         }
@@ -98,6 +89,24 @@ const PlayerScreen = () => {
       supabase.removeChannel(gamesChannel);
     };
   }, [roomCode, jugadorActual]);
+
+  // --- 3. NUEVO EFECTO: Cargar resultados cuando termina la ronda ---
+  useEffect(() => {
+    const cargarResultados = async () => {
+      if (juegoActual?.id && (juegoActual.state === GameState.END || juegoActual.state === GameState.RESULT)) {
+        const { data } = await supabase
+          .from('Result_Game')
+          .select('*, Player(name)')
+          .eq('game', juegoActual.id)
+          .order('points_win', { ascending: false });
+        setResultadosRonda(data || []);
+      } else {
+        setResultadosRonda([]);
+      }
+    };
+    cargarResultados();
+  }, [juegoActual?.state, juegoActual?.id]);
+
 
   // --- Lógica de Renderizado ---
 
@@ -130,13 +139,38 @@ const PlayerScreen = () => {
     );
   }
 
-  // VISTA: Descanso o Resultados de Ronda
-  if (!juegoActual || juegoActual.state === GameState.END) {
+  // VISTA: Lobby inicial (Aún no hay juegos)
+  if (!juegoActual) {
     return (
       <div className="container mt-5 text-center animate__animated animate__fadeIn">
-        <h2 className="fw-bold text-primary">¡Descanso!</h2>
-        <p className="lead text-muted mt-3">Mira la TV para ver los resultados.</p>
-        <p>Esperando a que el Admin inicie la siguiente ronda...</p>
+        <h2 className="fw-bold text-primary">¡Bienvenido!</h2>
+        <p className="lead text-muted mt-3">Mira la TV.</p>
+        <p>Esperando a que el Admin inicie la primera ronda...</p>
+      </div>
+    );
+  }
+
+  // VISTA: Descanso o Resultados de Ronda
+  if (juegoActual.state === GameState.END) {
+    return (
+      <div className="bg-light vh-100 d-flex flex-column pt-4 px-2">
+
+        {/* Cabecera del móvil */}
+        <div className="text-center animate__animated animate__fadeIn mb-3">
+          <h2 className="fw-bold text-primary mb-1">¡Descanso!</h2>
+          <p className="text-muted small mb-0">Esperando al Admin para la siguiente ronda...</p>
+        </div>
+
+        {/* Contenedor flexible para la tabla (se lleva el espacio restante) */}
+        <div className="flex-grow-1 overflow-auto">
+          <QualifyingRound
+            resultadosRonda={resultadosRonda}
+            juegoActual={juegoActual}
+            compact={true}
+          />
+        </div>
+
+        <GlobalScoreboard salaId={sala.id} />
       </div>
     );
   }
@@ -144,10 +178,14 @@ const PlayerScreen = () => {
   // VISTA: Preparación
   if (juegoActual.state === GameState.CREATED) {
     return (
-      <div className="container mt-5 text-center animate__animated animate__pulse animate__infinite">
-        <h1 className="fw-bold text-warning">¡PREPÁRATE!</h1>
-        <h3 className="mt-3">Ronda de {juegoActual.type}</h3>
-        <p className="text-muted mt-4">La ronda está a punto de empezar...</p>
+      <div className="bg-light vh-100 d-flex flex-column pt-4 px-2">
+        <div className="container mt-5 text-center animate__animated animate__pulse animate__infinite">
+          <h1 className="fw-bold text-warning">¡PREPÁRATE!</h1>
+          <h3 className="mt-3">Ronda de {juegoActual.type}</h3>
+          <p className="text-muted mt-4">La ronda está a punto de empezar...</p>
+
+        </div>
+        <GlobalScoreboard salaId={sala.id} />
       </div>
     );
   }

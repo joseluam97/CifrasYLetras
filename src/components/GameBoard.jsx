@@ -4,6 +4,7 @@ import { supabase } from '../../supabase';
 import { useGameStore } from '../store/gameStore';
 import { GameState, GameType, AppRole, RoomState } from '../../constants/gameStates';
 import RoomQRCode from './RoomQRCode';
+import QualifyingRound from './QualifyingRound.jsx';
 
 const GameBoard = ({ sala: salaProp, role }) => {
     const { procesarResultadosRonda, resetearPartida, generateNextRound } = useGameStore();
@@ -239,69 +240,10 @@ const GameBoard = ({ sala: salaProp, role }) => {
         // CLASIFICACIÓN DE RONDA
         if (juegoActual.state === GameState.END) {
             return (
-                // Añadido d-flex y h-100 para centrar la tabla verticalmente en el hueco que queda
-                <div className="container-fluid text-center animate__animated animate__fadeIn px-2 h-100 d-flex flex-column justify-content-center">
-
-                    <h2 className="text-warning fw-bold mb-3 mb-md-5" style={{ fontSize: "clamp(2rem, 5vw, 4rem)" }}>
-                        Clasificación Ronda {juegoActual.identifier}
-                    </h2>
-
-                    {resultadosRonda.length === 0 ? (
-                        <div className="spinner-border text-primary mx-auto" role="status" style={{ width: "4rem", height: "4rem" }}></div>
-                    ) : (
-                        // Aumentado drásticamente el tamaño: 90% del ancho hasta un máximo de 1100px
-                        <div className="list-group shadow-lg mx-auto w-100" style={{ maxWidth: "1100px" }}>
-                            {resultadosRonda.map((res, index) => {
-                                const esInvalida = juegoActual.type === GameType.LETRAS && res.reject_string === true;
-                                const ganoPuntos = res.points_win > 0;
-
-                                return (
-                                    <div key={res.id} className={`list-group-item d-flex justify-content-between align-items-center py-3 py-md-4 px-3 px-md-5 ${esInvalida ? 'bg-light' : ''}`}>
-
-                                        {/* Columna Izquierda: Posición y Nombre */}
-                                        <div className="d-flex align-items-center flex-grow-1 overflow-hidden">
-                                            <span
-                                                className={`fw-bold me-3 me-md-4 ${index === 0 && ganoPuntos ? 'text-warning' : 'text-secondary'}`}
-                                                style={{ fontSize: "clamp(1.5rem, 3.5vw, 2.8rem)" }}
-                                            >
-                                                #{index + 1}
-                                            </span>
-                                            <span
-                                                className="fw-bold text-dark text-truncate"
-                                                style={{ fontSize: "clamp(1.5rem, 3.5vw, 2.8rem)" }}
-                                            >
-                                                {res.Player?.name}
-                                            </span>
-                                        </div>
-
-                                        {/* Columna Derecha: Respuesta y Puntos */}
-                                        <div className="d-flex align-items-center gap-3 gap-md-5 ms-3 flex-shrink-0">
-                                            <span
-                                                className={`badge ${esInvalida ? 'bg-danger text-decoration-line-through' : 'bg-secondary'} fw-normal text-truncate`}
-                                                style={{ fontSize: "clamp(1.2rem, 2.5vw, 2.2rem)", maxWidth: "40vw" }}
-                                            >
-                                                {juegoActual.type === GameType.LETRAS
-                                                    ? `${res.result_string || '---'}`
-                                                    : `${res.result_numeric || '---'} (dif: ${Math.abs(res.result_numeric - juegoActual.result)})`
-                                                }
-                                            </span>
-
-                                            <div className="text-end" style={{ minWidth: "120px" }}>
-                                                <span
-                                                    className={`badge ${ganoPuntos ? 'bg-success' : 'bg-dark'} shadow-sm`}
-                                                    style={{ fontSize: "clamp(1.4rem, 3vw, 2.5rem)", padding: "0.4em 0.7em" }}
-                                                >
-                                                    +{res.points_win || 0} pts
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
+                <QualifyingRound
+                    resultadosRonda={resultadosRonda}
+                    juegoActual={juegoActual}
+                />
             );
         }
 
