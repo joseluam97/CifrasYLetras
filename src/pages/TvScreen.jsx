@@ -8,7 +8,7 @@ import { RoomState } from '../../constants/gameStates';
 const TvScreen = () => {
   const { roomCode } = useParams();
   const [sala, setSala] = useState(null);
-  
+
   // ELIMINADO: const [jugadores, setJugadores] = useState([]);
 
   useEffect(() => {
@@ -19,7 +19,7 @@ const TvScreen = () => {
         .select('*')
         .eq('code', roomCode)
         .single();
-        
+
       if (roomData) setSala(roomData);
     };
 
@@ -30,7 +30,7 @@ const TvScreen = () => {
     // Suscripción a los cambios de la sala (por si el admin cambia de ronda)
     const channelRoom = supabase.channel(`tv-room-${roomCode}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'Room', filter: `code=eq.${roomCode}` }, (payload) => {
-          setSala(payload.new);
+        setSala(payload.new);
       }).subscribe();
 
     return () => supabase.removeChannel(channelRoom);
@@ -39,6 +39,7 @@ const TvScreen = () => {
   if (!sala) return <div className="text-center mt-5"><h2>Cargando señal de TV... 📺</h2></div>;
 
   return (
+    // Candado 1: vh-100 y overflow-hidden. NUNCA habrá scroll global.
     <div className="container-fluid vh-100 d-flex flex-column bg-light p-0 overflow-hidden">
 
       {/* HEADER: Info de la Sala */}
@@ -56,7 +57,8 @@ const TvScreen = () => {
       </div>
 
       {/* MAIN CONTENT: Tablero */}
-      <div className="flex-grow-1 d-flex flex-column align-items-center justify-content-center text-center overflow-hidden px-2 position-relative">
+      {/* Candado 2: flex-grow-1 y overflow-hidden para el espacio central */}
+      <div className="flex-grow-1 d-flex flex-column align-items-center justify-content-center text-center px-2 position-relative overflow-hidden">
         {sala.state === RoomState.COMPLETE && (
           <div className="alert alert-success py-2 px-4 shadow-sm mb-2 mt-2 w-auto mx-auto z-1">
             <h5 className="fs-5 fw-bold mb-1">¡Sala Completa! 🎉</h5>
@@ -67,7 +69,7 @@ const TvScreen = () => {
         <GameBoard sala={sala} role={"TV"} />
       </div>
 
-      {/* FOOTER: Nuevo componente autónomo */}
+      {/* FOOTER: Marcador Global */}
       <GlobalScoreboard salaId={sala.id} />
 
     </div>
