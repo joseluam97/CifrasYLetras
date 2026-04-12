@@ -14,10 +14,7 @@ const GameBoard = ({ sala: salaProp, role }) => {
     const [tiempoRestante, setTiempoRestante] = useState(30);
     const [jugadoresConectados, setJugadoresConectados] = useState([]);
 
-    // Sincronizar estado local con la prop inicial
-    useEffect(() => {
-        setSala(salaProp);
-    }, [salaProp]);
+    useEffect(() => { setSala(salaProp); }, [salaProp]);
 
     // --- 1. DATOS Y SUSCRIPCIONES ---
     useEffect(() => {
@@ -25,81 +22,50 @@ const GameBoard = ({ sala: salaProp, role }) => {
 
         const fetchDatosIniciales = async () => {
             if (sala.current_rounds > 0) {
-                const { data } = await supabase
-                    .from('Games')
-                    .select('*')
-                    .eq('room', sala.id)
-                    .eq('identifier', sala.current_rounds)
-                    .single();
+                const { data } = await supabase.from('Games').select('*').eq('room', sala.id).eq('identifier', sala.current_rounds).single();
                 if (data) setJuegoActual(data);
             }
-
-            const { data: pData } = await supabase
-                .from('Player')
-                .select('*')
-                .eq('room_join', sala.id)
-                .order('points', { ascending: false });
+            const { data: pData } = await supabase.from('Player').select('*').eq('room_join', sala.id).order('points', { ascending: false });
             if (pData) setJugadoresConectados(pData);
         };
 
         fetchDatosIniciales();
 
-        // SUSCRIPCIÓN A LA SALA (ROOM) - Faltaba esto para detectar FINISHED
         const channelRoom = supabase.channel(`room-realtime-${sala.id}`)
-            .on('postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'Room', filter: `id=eq.${sala.id}` },
-                (payload) => {
-                    console.log("Cambio en Room detectado:", payload.new);
-                    setSala(payload.new);
-
-                    if (payload.new.state === RoomState.CREATED || payload.new.current_rounds === 0) {
-                        setJuegoActual(null);
-                        setResultadosRonda([]);
-                        setTiempoRestante(30);
-                    }
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'Room', filter: `id=eq.${sala.id}` }, (payload) => {
+                setSala(payload.new);
+                if (payload.new.state === RoomState.CREATED || payload.new.current_rounds === 0) {
+                    setJuegoActual(null);
+                    setResultadosRonda([]);
+                    setTiempoRestante(30);
                 }
-            ).subscribe();
+            }).subscribe();
 
-        // SUSCRIPCIÓN A LOS JUEGOS
         const channelGames = supabase.channel(`games-realtime-${sala.id}`)
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: 'Games', filter: `room=eq.${sala.id}` },
-                (payload) => {
-                    // Si el juego se borra (DELETE), limpiamos el estado
-                    if (payload.eventType === 'DELETE') {
-                        setJuegoActual(null);
-                    } else {
-                        setJuegoActual(payload.new);
-                    }
-                }
-            ).subscribe();
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'Games', filter: `room=eq.${sala.id}` }, (payload) => {
+                if (payload.eventType === 'DELETE') setJuegoActual(null);
+                else setJuegoActual(payload.new);
+            }).subscribe();
 
-        // SUSCRIPCIÓN A LOS JUGADORES
         const channelPlayers = supabase.channel(`players-realtime-${sala.id}`)
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: 'Player', filter: `room_join=eq.${sala.id}` },
-                async () => {
-                    const { data } = await supabase.from('Player').select('*').eq('room_join', sala.id).order('points', { ascending: false });
-                    setJugadoresConectados(data || []);
-                }
-            ).subscribe();
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'Player', filter: `room_join=eq.${sala.id}` }, async () => {
+                const { data } = await supabase.from('Player').select('*').eq('room_join', sala.id).order('points', { ascending: false });
+                setJugadoresConectados(data || []);
+            }).subscribe();
 
         return () => {
             supabase.removeChannel(channelRoom);
             supabase.removeChannel(channelGames);
             supabase.removeChannel(channelPlayers);
         };
-        // IMPORTANTE: Escuchamos el ID para que si cambia la sala se reinicie la suscripción, 
-        // pero no el objeto sala entero para evitar loops.
     }, [sala?.id]);
 
-    // --- 2. LÓGICA DE ESTADOS DE SALA ---
+    // --- 2. LÓGICA DE ESTADOS ---
     const esSalaLlena = jugadoresConectados.length >= (sala?.players || 0);
     const esPrimeraRonda = sala?.current_rounds === 0;
 
     useEffect(() => {
         if (!sala?.id || role !== AppRole.ADMIN) return;
-
         if (esSalaLlena && sala.state === RoomState.CREATED) {
             supabase.from('Room').update({ state: RoomState.COMPLETE }).eq('id', sala.id).then();
         }
@@ -116,9 +82,7 @@ const GameBoard = ({ sala: salaProp, role }) => {
                 setTiempoRestante(prev => {
                     if (prev <= 1) {
                         clearInterval(timer);
-                        if (role === AppRole.TV) {
-                            procesarResultadosRonda(juegoActual.id, juegoActual.type, juegoActual.result);
-                        }
+                        if (role === AppRole.TV) procesarResultadosRonda(juegoActual.id, juegoActual.type, juegoActual.result);
                         return 0;
                     }
                     return prev - 1;
@@ -129,22 +93,18 @@ const GameBoard = ({ sala: salaProp, role }) => {
         return () => clearInterval(timer);
     }, [juegoActual?.state, role, procesarResultadosRonda, juegoActual?.id, juegoActual?.type, juegoActual?.result]);
 
-    // --- 4. CARGA DE RESULTADOS --
+    // --- 4. CARGA DE RESULTADOS ---
     useEffect(() => {
         const cargarResultados = async () => {
-            if (juegoActual?.state === GameState.END || juegoActual?.state === GameState.RESULT) {
-                const { data } = await supabase
-                    .from('Result_Game')
-                    .select('*, Player(name)')
-                    .eq('game', juegoActual.id)
-                    .order('points_win', { ascending: false });
+            if (juegoActual?.id && (juegoActual.state === GameState.END || juegoActual.state === GameState.RESULT)) {
+                const { data } = await supabase.from('Result_Game').select('*, Player(name)').eq('game', juegoActual.id).order('points_win', { ascending: false });
                 setResultadosRonda(data || []);
             } else {
                 setResultadosRonda([]);
             }
         };
         cargarResultados();
-    }, [juegoActual?.state, juegoActual?.id, juegoActual?.type]);
+    }, [juegoActual?.state, juegoActual?.id]);
 
     // --- 5. FUNCIONES ADMIN ---
     const generarSiguienteRonda = async () => {
@@ -156,11 +116,7 @@ const GameBoard = ({ sala: salaProp, role }) => {
             }
             return;
         }
-
-        if (jugadoresConectados.length === 0) {
-            return;
-        }
-
+        if (jugadoresConectados.length === 0) return;
         setLoading(true);
         generateNextRound(sala);
         setLoading(false);
@@ -171,25 +127,18 @@ const GameBoard = ({ sala: salaProp, role }) => {
         await supabase.from('Games').update({ state: GameState.PLAYING }).eq('id', juegoActual.id);
     };
 
-    // --- VISTAS ---
+    // ==========================================
+    // VISTAS
+    // ==========================================
 
     if (role === AppRole.ADMIN) {
+        // ... (Mantenemos la vista ADMIN exactamente igual, no afecta a la TV)
         if (sala?.state === RoomState.FINISHED) {
             return (
                 <div className="card shadow-sm p-4 text-center mt-4 border-success animate__animated animate__fadeIn">
                     <h2 className="text-success fw-bold mb-3">🏆 Partida Finalizada</h2>
                     <div className="d-grid gap-2 mt-4">
-                        <button
-                            className="btn btn-success btn-lg fw-bold py-3"
-                            onClick={async () => {
-                                if (window.confirm("Se borrarán los puntos y el historial. ¿Continuar?")) {
-                                    await resetearPartida(sala.id);
-                                }
-                            }}
-                            disabled={loading}
-                        >
-                            🔄 REINICIAR Y BORRAR DATOS
-                        </button>
+                        <button className="btn btn-success btn-lg fw-bold py-3" disabled={loading} onClick={async () => { if (window.confirm("Se borrarán los puntos y el historial. ¿Continuar?")) { await resetearPartida(sala.id); } }}>🔄 REINICIAR Y BORRAR DATOS</button>
                         <Link to="/" className="btn btn-outline-secondary">Salir al Menú Principal</Link>
                     </div>
                 </div>
@@ -207,21 +156,14 @@ const GameBoard = ({ sala: salaProp, role }) => {
                                 {esSalaLlena ? '✅ Sala Completa' : `⏳ Esperando jugadores (${jugadoresConectados.length}/${sala?.players})`}
                             </div>
                         )}
-                        <button
-                            className="btn btn-primary btn-lg py-3 w-100 fw-bold shadow"
-                            onClick={generarSiguienteRonda}
-                            disabled={loading || (esPrimeraRonda && jugadoresConectados.length === 0)}
-                        >
-                            {sala?.current_rounds >= sala?.total_rounds ? 'FINALIZAR PARTIDA' :
-                                esPrimeraRonda ? '🚀 INICIAR JUEGO' : 'GENERAR SIGUIENTE RONDA'}
+                        <button className="btn btn-primary btn-lg py-3 w-100 fw-bold shadow" onClick={generarSiguienteRonda} disabled={loading || (esPrimeraRonda && jugadoresConectados.length === 0)}>
+                            {sala?.current_rounds >= sala?.total_rounds ? 'FINALIZAR PARTIDA' : esPrimeraRonda ? '🚀 INICIAR JUEGO' : 'GENERAR SIGUIENTE RONDA'}
                         </button>
                     </div>
                 ) : (
                     <div>
                         <div className="alert alert-info">Ronda {juegoActual.identifier} ({juegoActual.type})</div>
-                        {juegoActual.state === GameState.CREATED && (
-                            <button className="btn btn-success btn-lg py-3 w-100 fw-bold animate__animated animate__pulse animate__infinite" onClick={iniciarTiempo}>▶ Iniciar Tiempo</button>
-                        )}
+                        {juegoActual.state === GameState.CREATED && <button className="btn btn-success btn-lg py-3 w-100 fw-bold animate__animated animate__pulse animate__infinite" onClick={iniciarTiempo}>▶ Iniciar Tiempo</button>}
                         {juegoActual.state === GameState.PLAYING && <button className="btn btn-warning btn-lg py-3 w-100 fw-bold" disabled>⏳ Jugando...</button>}
                         {juegoActual.state === GameState.RESULT && <button className="btn btn-secondary btn-lg py-3 w-100 fw-bold" disabled>Calculando...</button>}
                     </div>
@@ -231,15 +173,17 @@ const GameBoard = ({ sala: salaProp, role }) => {
     }
 
     if (role === AppRole.TV) {
+
+        // PODIO FINAL
         if (sala?.state === RoomState.FINISHED) {
             return (
-                <div className="container text-center mt-5 animate__animated animate__zoomIn">
-                    <h1 className="display-2 fw-bold text-primary mb-5">🏆 PODIO FINAL</h1>
-                    <div className="row justify-content-center">
+                <div className="container-fluid text-center mt-3 mt-md-5 animate__animated animate__zoomIn px-2">
+                    <h1 className="fw-bold text-primary mb-4" style={{ fontSize: "clamp(2.5rem, 6vw, 4rem)" }}>🏆 PODIO FINAL</h1>
+                    <div className="row justify-content-center mx-0">
                         {jugadoresConectados.map((jugador, index) => (
-                            <div key={jugador.id} className={`col-md-8 mb-3 p-4 rounded-pill shadow d-flex justify-content-between align-items-center ${index === 0 ? 'bg-warning border border-4 border-white' : 'bg-white'}`}>
-                                <span className="fs-2 fw-bold">#{index + 1} {jugador.name}</span>
-                                <span className="fs-2 fw-bold">{jugador.points} pts</span>
+                            <div key={jugador.id} className={`col-12 col-md-8 col-lg-6 mb-2 p-3 p-md-4 rounded-pill shadow-sm d-flex justify-content-between align-items-center ${index === 0 ? 'bg-warning border border-4 border-white' : 'bg-white'}`}>
+                                <span className="fs-3 fs-md-2 fw-bold text-truncate" style={{ maxWidth: "60%" }}>#{index + 1} {jugador.name}</span>
+                                <span className="fs-3 fs-md-2 fw-bold text-end">{jugador.points} pts</span>
                             </div>
                         ))}
                     </div>
@@ -247,89 +191,153 @@ const GameBoard = ({ sala: salaProp, role }) => {
             );
         }
 
+        // LOBBY (PANTALLA DE UNIÓN Y QR)
         if (!juegoActual) {
             return (
-                <div className="container text-center mt-5 animate__animated animate__fadeIn">
-                    <div className="row align-items-center justify-content-center">
-                        <div className="col-md-7">
-                            <h1 className="display-3 fw-bold mb-4">{esSalaLlena ? '¡Listos para empezar!' : '¡Únete a la partida!'}</h1>
-                            <div className="bg-white shadow-sm rounded-pill p-4 d-inline-block border border-primary border-4 mb-4">
-                                <span className="display-1 fw-bold text-primary" style={{ letterSpacing: "12px" }}>{sala?.code}</span>
+                // h-100 para que ocupe todo el flex-grow del padre
+                <div className="container-fluid text-center animate__animated animate__fadeIn px-2 h-100 d-flex flex-column justify-content-center">
+                    <div className="row align-items-center justify-content-center mx-0 w-100">
+
+                        <div className="col-12 col-md-7 d-flex flex-column align-items-center mb-3 mb-md-0">
+                            {/* Texto reducido */}
+                            <h2 className="fw-bold mb-2 mb-md-3" style={{ fontSize: "clamp(1.8rem, 4vw, 3.5rem)" }}>
+                                {esSalaLlena ? '¡Listos para empezar!' : '¡Únete a la partida!'}
+                            </h2>
+
+                            {/* Píldora del código más fina y con menos padding */}
+                            <div className="bg-white shadow-sm rounded-pill p-2 p-md-3 border border-primary border-3 mb-3 w-100" style={{ maxWidth: "400px" }}>
+                                <span className="fw-bold text-primary d-block text-center w-100 lh-1" style={{ fontSize: "clamp(2.5rem, 6vw, 4.5rem)", letterSpacing: "clamp(4px, 2vw, 10px)" }}>
+                                    {sala?.code}
+                                </span>
                             </div>
-                            <div className="mt-4">
-                                <h4 className="text-secondary fw-bold mb-3">Jugadores ({jugadoresConectados.length}/{sala?.players}):</h4>
-                                <div className="d-flex justify-content-center flex-wrap gap-2">
+
+                            {/* Jugadores */}
+                            <div>
+                                <h6 className="text-secondary fw-bold mb-2">Jugadores ({jugadoresConectados.length}/{sala?.players}):</h6>
+                                <div className="d-flex justify-content-center flex-wrap gap-2" style={{ maxHeight: "15vh", overflowY: "auto" }}>
                                     {jugadoresConectados.map((j) => (
-                                        <div key={j.id} className="bg-success text-white px-4 py-2 rounded-pill fw-bold animate__animated animate__bounceIn">👤 {j.name}</div>
+                                        <div key={j.id} className="bg-success text-white px-3 py-1 rounded-pill fw-bold animate__animated animate__bounceIn" style={{ fontSize: "0.9rem" }}>
+                                            👤 {j.name}
+                                        </div>
                                     ))}
                                 </div>
                             </div>
                         </div>
-                        <div className="col-md-5"><RoomQRCode code={sala?.code} /></div>
+
+                        {/* QR Code contenedor más ajustado */}
+                        <div className="col-8 col-md-4 mx-auto mt-2 mt-md-0" style={{ maxWidth: "280px" }}>
+                            <div className="bg-white p-2 rounded shadow-sm">
+                                <RoomQRCode code={sala?.code} />
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             );
         }
 
+        // CLASIFICACIÓN DE RONDA
         if (juegoActual.state === GameState.END) {
             return (
-                <div className="text-center animate__animated animate__fadeIn">
-                    <h2 className="text-warning fw-bold mb-2">Clasificación Ronda {juegoActual.identifier}</h2>
-                    <div className="list-group shadow-sm mx-auto" style={{ maxWidth: "650px" }}>
-                        {resultadosRonda.map((res, index) => {
-                            const esInvalida = juegoActual.type === GameType.LETRAS && res.reject_string === true;
-                            const ganoPuntos = res.points_win > 0;
+                // Añadido d-flex y h-100 para centrar la tabla verticalmente en el hueco que queda
+                <div className="container-fluid text-center animate__animated animate__fadeIn px-2 h-100 d-flex flex-column justify-content-center">
 
-                            return (
-                                <div
-                                    key={res.id}
-                                    className={`list-group-item d-flex justify-content-between align-items-center py-3 ${esInvalida ? 'bg-light' : ''}`}
-                                >
-                                    {/* Nombre y Posición */}
-                                    <div className="d-flex align-items-center">
-                                        <span className={`fs-4 fw-bold me-3 ${index === 0 && ganoPuntos ? 'text-warning' : 'text-secondary'}`}>
-                                            #{index + 1}
-                                        </span>
-                                        <span className="fs-4 fw-bold text-dark">
-                                            {res.Player?.name}
-                                        </span>
-                                    </div>
+                    <h2 className="text-warning fw-bold mb-3 mb-md-5" style={{ fontSize: "clamp(2rem, 5vw, 4rem)" }}>
+                        Clasificación Ronda {juegoActual.identifier}
+                    </h2>
 
-                                    {/* Respuesta y Puntos Ganados */}
-                                    <div className="d-flex align-items-center gap-3">
-                                        <span className={`badge ${esInvalida ? 'bg-danger text-decoration-line-through' : 'bg-secondary'} fs-6 fw-normal`}>
-                                            {juegoActual.type === GameType.LETRAS
-                                                ? `${res.result_string || '---'}`
-                                                : `${res.result_numeric || '---'} (dif: ${Math.abs(res.result_numeric - juegoActual.result)})`
-                                            }
-                                        </span>
+                    {resultadosRonda.length === 0 ? (
+                        <div className="spinner-border text-primary mx-auto" role="status" style={{ width: "4rem", height: "4rem" }}></div>
+                    ) : (
+                        // Aumentado drásticamente el tamaño: 90% del ancho hasta un máximo de 1100px
+                        <div className="list-group shadow-lg mx-auto w-100" style={{ maxWidth: "1100px" }}>
+                            {resultadosRonda.map((res, index) => {
+                                const esInvalida = juegoActual.type === GameType.LETRAS && res.reject_string === true;
+                                const ganoPuntos = res.points_win > 0;
 
-                                        <div className="text-end" style={{ minWidth: "90px" }}>
-                                            <span className={`badge ${ganoPuntos ? 'bg-success' : 'bg-dark'} fs-5 shadow-sm`}>
-                                                +{res.points_win || 0} pts
+                                return (
+                                    <div key={res.id} className={`list-group-item d-flex justify-content-between align-items-center py-3 py-md-4 px-3 px-md-5 ${esInvalida ? 'bg-light' : ''}`}>
+
+                                        {/* Columna Izquierda: Posición y Nombre */}
+                                        <div className="d-flex align-items-center flex-grow-1 overflow-hidden">
+                                            <span
+                                                className={`fw-bold me-3 me-md-4 ${index === 0 && ganoPuntos ? 'text-warning' : 'text-secondary'}`}
+                                                style={{ fontSize: "clamp(1.5rem, 3.5vw, 2.8rem)" }}
+                                            >
+                                                #{index + 1}
+                                            </span>
+                                            <span
+                                                className="fw-bold text-dark text-truncate"
+                                                style={{ fontSize: "clamp(1.5rem, 3.5vw, 2.8rem)" }}
+                                            >
+                                                {res.Player?.name}
                                             </span>
                                         </div>
+
+                                        {/* Columna Derecha: Respuesta y Puntos */}
+                                        <div className="d-flex align-items-center gap-3 gap-md-5 ms-3 flex-shrink-0">
+                                            <span
+                                                className={`badge ${esInvalida ? 'bg-danger text-decoration-line-through' : 'bg-secondary'} fw-normal text-truncate`}
+                                                style={{ fontSize: "clamp(1.2rem, 2.5vw, 2.2rem)", maxWidth: "40vw" }}
+                                            >
+                                                {juegoActual.type === GameType.LETRAS
+                                                    ? `${res.result_string || '---'}`
+                                                    : `${res.result_numeric || '---'} (dif: ${Math.abs(res.result_numeric - juegoActual.result)})`
+                                                }
+                                            </span>
+
+                                            <div className="text-end" style={{ minWidth: "120px" }}>
+                                                <span
+                                                    className={`badge ${ganoPuntos ? 'bg-success' : 'bg-dark'} shadow-sm`}
+                                                    style={{ fontSize: "clamp(1.4rem, 3vw, 2.5rem)", padding: "0.4em 0.7em" }}
+                                                >
+                                                    +{res.points_win || 0} pts
+                                                </span>
+                                            </div>
+                                        </div>
+
                                     </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             );
         }
 
+        // TABLERO DE JUEGO ACTIVO
         return (
-            <div className="w-100 d-flex flex-column align-items-center justify-content-center mt-4">
-                <h3 className="text-uppercase fw-bold text-secondary mb-3">Ronda {juegoActual.identifier} / {sala?.total_rounds}</h3>
-                <div className="mb-4 fw-bold text-primary" style={{ fontSize: "6rem" }}>⏱ {tiempoRestante}</div>
+            <div className="w-100 d-flex flex-column align-items-center justify-content-center mt-2 mt-md-4 px-2">
+                <h4 className="text-uppercase fw-bold text-secondary mb-2 mb-md-3" style={{ fontSize: "clamp(1.2rem, 3vw, 1.75rem)" }}>Ronda {juegoActual.identifier} / {sala?.total_rounds}</h4>
+
+                {/* Reloj Dinámico */}
+                <div className="mb-2 mb-md-4 fw-bold text-primary lh-1" style={{ fontSize: "clamp(4rem, 12vw, 7rem)" }}>
+                    ⏱ {tiempoRestante}
+                </div>
+
                 {juegoActual.type === GameType.CIFRAS && (
-                    <div className="mb-4 bg-dark text-white px-5 py-3 rounded-pill shadow">
-                        <h2 className="m-0 fw-bold">OBJETIVO: <span className="text-warning">{juegoActual.result}</span></h2>
+                    <div className="mb-3 mb-md-4 bg-dark text-white px-4 py-2 px-md-5 py-md-3 rounded-pill shadow d-inline-block">
+                        <h2 className="m-0 fw-bold" style={{ fontSize: "clamp(1.5rem, 4vw, 2.5rem)" }}>
+                            OBJETIVO: <span className="text-warning">{juegoActual.result}</span>
+                        </h2>
                     </div>
                 )}
-                <div className="d-flex flex-wrap justify-content-center gap-3 mb-5">
+
+                {/* Fichas Responsivas */}
+                <div className="d-flex flex-wrap justify-content-center gap-2 gap-md-3 mb-3 mb-md-5">
                     {juegoActual.data.map((item, index) => (
-                        <div key={index} className="card shadow d-flex align-items-center justify-content-center fw-bold text-dark bg-white" style={{ width: "90px", height: "90px", fontSize: "3rem", border: "4px solid #0d6efd" }}>{item}</div>
+                        <div
+                            key={index}
+                            className="card shadow d-flex align-items-center justify-content-center fw-bold text-dark bg-white"
+                            style={{
+                                width: "clamp(50px, 12vw, 90px)",   // Se encoge si la pantalla es estrecha
+                                height: "clamp(50px, 12vw, 90px)",
+                                fontSize: "clamp(1.5rem, 5vw, 3rem)", // El texto se encoge proporcionalmente
+                                border: "clamp(2px, 0.5vw, 4px) solid #0d6efd"
+                            }}
+                        >
+                            {item}
+                        </div>
                     ))}
                 </div>
             </div>
