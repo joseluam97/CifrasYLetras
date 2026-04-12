@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../../supabase";
 import { GameState } from "../../constants/gameStates";
 
-const PlayerLetrasScreen = ({ juego, jugador }) => {
+const PlayerLetrasScreen = ({ juego, jugador, tiempoRestante }) => {
   // Ahora manejamos un solo array de objetos para las letras de la base
   const [letrasSource, setLetrasSource] = useState([]);
   const [palabraActual, setPalabraActual] = useState([]);
@@ -11,8 +11,8 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
 
   // Inicializar letras cuando empieza el juego
   useEffect(() => {
-    const letrasObj = juego.data.map((letra, index) => ({ 
-      id: index, 
+    const letrasObj = juego.data.map((letra, index) => ({
+      id: index,
       char: letra,
       usada: false // Nueva propiedad para controlar el bloqueo
     }));
@@ -24,10 +24,10 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
     if (letraObj.usada) return;
 
     // Marcamos la letra como usada en el panel inferior
-    setLetrasSource(prev => prev.map(l => 
+    setLetrasSource(prev => prev.map(l =>
       l.id === letraObj.id ? { ...l, usada: true } : l
     ));
-    
+
     // La añadimos a la palabra de arriba
     setPalabraActual(prev => [...prev, letraObj]);
   };
@@ -35,16 +35,16 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
   const quitarLetra = (letraObj) => {
     // La quitamos de la palabra de arriba
     setPalabraActual(prev => prev.filter(l => l.id !== letraObj.id));
-    
+
     // La desbloqueamos en el panel inferior
-    setLetrasSource(prev => prev.map(l => 
+    setLetrasSource(prev => prev.map(l =>
       l.id === letraObj.id ? { ...l, usada: false } : l
     ));
   };
 
   const enviarPalabra = async () => {
     const palabraString = palabraActual.map(l => l.char).join('');
-    
+
     if (palabraString.length <= mejorPalabraEnviada.length - 1) {
       alert("¡Ya has enviado una palabra de mayor longitud!");
       return;
@@ -70,7 +70,7 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
         }]);
       }
       setMejorPalabraEnviada(palabraString);
-      
+
       // Resetear el tablero: todas las letras vuelven a estar disponibles (usada: false)
       setLetrasSource(prev => prev.map(l => ({ ...l, usada: false })));
       setPalabraActual([]);
@@ -92,16 +92,24 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
 
   return (
     <div className="container mt-4 text-center">
+      {/* NUEVO: Indicador de Tiempo */}
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h4 className="text-primary fw-bold m-0">Forma la palabra</h4>
+        <div className={`badge fs-4 ${tiempoRestante <= 5 ? 'bg-danger animate__animated animate__pulse animate__infinite' : 'bg-dark'}`}>
+          ⏱ {tiempoRestante}
+        </div>
+      </div>
+
       <h4 className="text-primary fw-bold mb-4">Forma la palabra más larga</h4>
-      
+
       {/* Zona de la palabra formada */}
       <div className="card shadow-sm mb-4 p-3 border-primary" style={{ minHeight: "100px" }}>
         <h6 className="text-muted">Tu Palabra:</h6>
         <div className="d-flex justify-content-center flex-wrap gap-2">
           {palabraActual.map(letra => (
-            <button 
-              key={`selected-${letra.id}`} 
-              onClick={() => quitarLetra(letra)} 
+            <button
+              key={`selected-${letra.id}`}
+              onClick={() => quitarLetra(letra)}
               className="btn btn-primary btn-lg fs-3 fw-bold p-3 animate__animated animate__bounceIn"
             >
               {letra.char}
@@ -115,15 +123,14 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
         <h6 className="text-muted mb-3">Letras Disponibles:</h6>
         <div className="d-flex justify-content-center flex-wrap gap-2">
           {letrasSource.map(letra => (
-            <button 
-              key={`source-${letra.id}`} 
-              onClick={() => seleccionarLetra(letra)} 
+            <button
+              key={`source-${letra.id}`}
+              onClick={() => seleccionarLetra(letra)}
               disabled={letra.usada}
-              className={`btn btn-lg fs-3 fw-bold p-3 transition-all ${
-                letra.usada 
-                ? "btn-light text-muted opacity-25" 
+              className={`btn btn-lg fs-3 fw-bold p-3 transition-all ${letra.usada
+                ? "btn-light text-muted opacity-25"
                 : "btn-outline-secondary shadow-sm"
-              }`}
+                }`}
               style={{ width: "60px", minHeight: "70px" }}
             >
               {letra.char}
@@ -133,8 +140,8 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
       </div>
 
       {/* Botón de Enviar */}
-      <button 
-        onClick={enviarPalabra} 
+      <button
+        onClick={enviarPalabra}
         disabled={palabraActual.length < 3 || enviando}
         className="btn btn-success btn-lg w-100 py-3 fw-bold shadow-sm"
       >
@@ -143,7 +150,7 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
 
       {mejorPalabraEnviada && (
         <p className="text-success mt-3 fw-bold animate__animated animate__fadeIn">
-           ✅ Palabra asegurada: {mejorPalabraEnviada}
+          ✅ Palabra asegurada: {mejorPalabraEnviada}
         </p>
       )}
     </div>

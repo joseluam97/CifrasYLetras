@@ -2,13 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabase";
 import { GameState } from "../../constants/gameStates";
 
-const PlayerCifrasScreen = ({ juego, jugador }) => {
+const PlayerCifrasScreen = ({ juego, jugador, tiempoRestante }) => {
   const [fichasDisponibles, setFichasDisponibles] = useState([]);
-  
+
   const [operando1, setOperando1] = useState(null);
   const [operador, setOperador] = useState(null);
   const [operando2, setOperando2] = useState(null);
-  
+
   const [mejorResultadoEnviado, setMejorResultadoEnviado] = useState(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -53,7 +53,7 @@ const PlayerCifrasScreen = ({ juego, jugador }) => {
     if (tipo === 1 && operando1) {
       setFichasDisponibles(prev => [...prev, operando1]);
       setOperando1(null);
-      setOperador(null); 
+      setOperador(null);
     } else if (tipo === 2 && operando2) {
       setFichasDisponibles(prev => [...prev, operando2]);
       setOperando2(null);
@@ -140,7 +140,7 @@ const PlayerCifrasScreen = ({ juego, jugador }) => {
     if (mejorResultadoEnviado !== null) {
       const difAnterior = Math.abs(mejorResultadoEnviado - objetivo);
       const difNuevo = Math.abs(mejorActual - objetivo);
-      
+
       if (difNuevo >= difAnterior) {
         alert("¡Ya has asegurado un número igual o más cercano al objetivo!");
         return;
@@ -157,7 +157,7 @@ const PlayerCifrasScreen = ({ juego, jugador }) => {
   useEffect(() => {
     if (juego.state === GameState.RESULT && !autoEnvioRealizado.current) {
       autoEnvioRealizado.current = true; // Evitamos que se ejecute dos veces
-      
+
       const difActual = Math.abs(mejorActual - objetivo);
       const difEnviado = mejorResultadoEnviado !== null ? Math.abs(mejorResultadoEnviado - objetivo) : Infinity;
 
@@ -183,6 +183,14 @@ const PlayerCifrasScreen = ({ juego, jugador }) => {
 
   return (
     <div className="container mt-4 text-center pb-5">
+
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h4 className="text-primary fw-bold m-0">Consigue la cifra mas cercana</h4>
+        <div className={`badge fs-4 ${tiempoRestante <= 5 ? 'bg-danger animate__animated animate__pulse animate__infinite' : 'bg-dark'}`}>
+          ⏱ {tiempoRestante}
+        </div>
+      </div>
+
       <div className="bg-dark text-white p-3 rounded shadow-sm mb-4">
         <h5 className="m-0 text-uppercase text-secondary" style={{ letterSpacing: "2px" }}>Objetivo</h5>
         <h1 className="m-0 fw-bold text-warning display-4">{objetivo}</h1>
@@ -190,9 +198,9 @@ const PlayerCifrasScreen = ({ juego, jugador }) => {
 
       <div className="card shadow-sm mb-4 border-primary bg-light">
         <div className="card-body d-flex justify-content-center align-items-center gap-2" style={{ minHeight: "100px" }}>
-          <div 
-            className={`border rounded p-3 fs-3 fw-bold bg-white ${operando1 ? 'text-dark border-primary' : 'text-muted border-dashed'}`}
-            style={{ width: "80px", cursor: operando1 ? 'pointer' : 'default' }}
+          <div
+            className={`border rounded px-3 py-2 fs-3 fw-bold bg-white text-center d-flex align-items-center justify-content-center ${operando1 ? 'text-dark border-primary' : 'text-muted border-dashed'}`}
+            style={{ minWidth: "80px", height: "70px", cursor: operando1 ? 'pointer' : 'default' }}
             onClick={() => devolverFicha(1)}
           >
             {operando1 ? operando1.valor : '_'}
@@ -200,15 +208,15 @@ const PlayerCifrasScreen = ({ juego, jugador }) => {
 
           <div className="fs-3 fw-bold text-primary px-2">{operador ? operador : ' '}</div>
 
-          <div 
-            className={`border rounded p-3 fs-3 fw-bold bg-white ${operando2 ? 'text-dark border-primary' : 'text-muted border-dashed'}`}
-            style={{ width: "80px", cursor: operando2 ? 'pointer' : 'default' }}
+          <div
+            className={`border rounded px-3 py-2 fs-3 fw-bold bg-white text-center d-flex align-items-center justify-content-center ${operando2 ? 'text-dark border-primary' : 'text-muted border-dashed'}`}
+            style={{ minWidth: "80px", height: "70px", cursor: operando2 ? 'pointer' : 'default' }}
             onClick={() => devolverFicha(2)}
           >
             {operando2 ? operando2.valor : '_'}
           </div>
 
-          <button 
+          <button
             className="btn btn-primary btn-lg ms-3 fw-bold rounded-circle shadow-sm"
             style={{ width: "60px", height: "60px" }}
             onClick={calcular}
@@ -221,8 +229,8 @@ const PlayerCifrasScreen = ({ juego, jugador }) => {
 
       <div className="d-flex justify-content-center gap-2 mb-4">
         {['+', '-', '*', '/'].map(op => (
-          <button 
-            key={op} 
+          <button
+            key={op}
             className="btn btn-warning btn-lg fw-bold fs-3 shadow-sm"
             style={{ width: "70px" }}
             onClick={() => clickOperador(op)}
@@ -237,11 +245,11 @@ const PlayerCifrasScreen = ({ juego, jugador }) => {
         <h6 className="text-muted text-start mb-2 fw-bold text-uppercase">Tus Números</h6>
         <div className="d-flex flex-wrap gap-2 justify-content-center bg-white p-3 rounded shadow-sm border">
           {fichasDisponibles.map(ficha => (
-            <button 
-              key={ficha.id} 
-              onClick={() => clickFicha(ficha)} 
-              className={`btn btn-lg fs-3 fw-bold shadow-sm ${ficha.esOriginal ? 'btn-outline-primary' : 'btn-success text-white'}`}
-              style={{ minWidth: "70px" }}
+            <button
+              key={ficha.id}
+              onClick={() => clickFicha(ficha)}
+              className={`btn px-3 py-2 fs-3 fw-bold shadow-sm ${ficha.esOriginal ? 'btn-outline-primary' : 'btn-success text-white'}`}
+              style={{ minWidth: "80px" }}
             >
               {ficha.valor}
             </button>
@@ -260,15 +268,15 @@ const PlayerCifrasScreen = ({ juego, jugador }) => {
           <button onClick={inicializarFichas} className="btn btn-outline-danger fw-bold">↻ Reiniciar Panel</button>
         </div>
 
-        <button 
-          onClick={enviarResultado} 
+        <button
+          onClick={enviarResultado}
           disabled={enviando || fichasDisponibles.length === 0}
           className="btn btn-success btn-lg w-100 py-3 fw-bold shadow-sm d-flex justify-content-between align-items-center px-4"
         >
           <span>{enviando ? "Asegurando..." : "Asegurar resultado"}</span>
           <span className="badge bg-white text-success fs-5">{mejorActual}</span>
         </button>
-        
+
         {mejorResultadoEnviado !== null && (
           <p className="text-success mt-2 fw-bold">✓ Has asegurado el número: {mejorResultadoEnviado}</p>
         )}

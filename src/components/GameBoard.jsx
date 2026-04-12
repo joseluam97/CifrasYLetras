@@ -5,6 +5,7 @@ import { useGameStore } from '../store/gameStore';
 import { GameState, GameType, AppRole, RoomState } from '../../constants/gameStates';
 import RoomQRCode from './RoomQRCode';
 import QualifyingRound from './QualifyingRound.jsx';
+import { TIME_PER_ROUND_LETTERS, TIME_PER_ROUND_NUMBERS } from '../../constants/gameStates';
 
 const GameBoard = ({ sala: salaProp, role }) => {
     const { procesarResultadosRonda, resetearPartida, generateNextRound } = useGameStore();
@@ -12,7 +13,7 @@ const GameBoard = ({ sala: salaProp, role }) => {
     const [juegoActual, setJuegoActual] = useState(null);
     const [resultadosRonda, setResultadosRonda] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [tiempoRestante, setTiempoRestante] = useState(30);
+    const [tiempoRestante, setTiempoRestante] = useState(TIME_PER_ROUND_LETTERS);
     const [jugadoresConectados, setJugadoresConectados] = useState([]);
 
     useEffect(() => { setSala(salaProp); }, [salaProp]);
@@ -78,21 +79,34 @@ const GameBoard = ({ sala: salaProp, role }) => {
     // --- 3. CRONÓMETRO ---
     useEffect(() => {
         let timer;
+        
+        // 1. Cuando el juego se crea, fijamos el tiempo inicial según el tipo
+        if (juegoActual?.state === GameState.CREATED) {
+            const tiempoInicial = juegoActual.type === GameType.CIFRAS 
+                ? TIME_PER_ROUND_NUMBERS 
+                : TIME_PER_ROUND_LETTERS;
+            setTiempoRestante(tiempoInicial);
+        }
+
+        // 2. Cuando el juego está en marcha, empezamos la cuenta atrás
         if (juegoActual?.state === GameState.PLAYING && tiempoRestante > 0) {
             timer = setInterval(() => {
                 setTiempoRestante(prev => {
                     if (prev <= 1) {
                         clearInterval(timer);
-                        if (role === AppRole.TV) procesarResultadosRonda(juegoActual.id, juegoActual.type, juegoActual.result);
+                        // Solo el rol de TV procesa el final para evitar llamadas duplicadas a la BD
+                        if (role === AppRole.TV) {
+                            procesarResultadosRonda(juegoActual.id, juegoActual.type, juegoActual.result);
+                        }
                         return 0;
                     }
                     return prev - 1;
                 });
             }, 1000);
         }
-        if (juegoActual?.state === GameState.CREATED) setTiempoRestante(30);
+
         return () => clearInterval(timer);
-    }, [juegoActual?.state, role, procesarResultadosRonda, juegoActual?.id, juegoActual?.type, juegoActual?.result]);
+    }, [juegoActual?.state, juegoActual?.type, role, procesarResultadosRonda, juegoActual?.id, juegoActual?.result]);
 
     // --- 4. CARGA DE RESULTADOS ---
     useEffect(() => {

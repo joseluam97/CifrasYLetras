@@ -8,6 +8,7 @@ import PlayerCifrasScreen from "./PlayerCifrasScreen.jsx";
 import GameBoard from "../components/GameBoard.jsx";
 import QualifyingRound from "../components/QualifyingRound.jsx";
 import GlobalScoreboard from "../components/GlobalScoreboard.jsx";
+import { TIME_PER_ROUND_LETTERS, TIME_PER_ROUND_NUMBERS } from '../../constants/gameStates';
 
 const PlayerScreen = () => {
   const { roomCode } = useParams();
@@ -15,8 +16,10 @@ const PlayerScreen = () => {
 
   const [sala, setSala] = useState(null);
   const [juegoActual, setJuegoActual] = useState(null);
-  const [resultadosRonda, setResultadosRonda] = useState([]); // <-- 2. Estado para los resultados
+  const [resultadosRonda, setResultadosRonda] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [tiempoRestante, setTiempoRestante] = useState(TIME_PER_ROUND_LETTERS);
 
   useEffect(() => {
     if (!jugadorActual) {
@@ -89,6 +92,34 @@ const PlayerScreen = () => {
       supabase.removeChannel(gamesChannel);
     };
   }, [roomCode, jugadorActual]);
+
+  // --- NUEVO EFECTO: Cronómetro Local ---
+  useEffect(() => {
+    let timer;
+
+    // 1. Setear el tiempo según el tipo de ronda cuando se crea
+    if (juegoActual?.state === GameState.CREATED) {
+      const tiempoInicial = juegoActual.type === GameType.CIFRAS
+        ? TIME_PER_ROUND_NUMBERS
+        : TIME_PER_ROUND_LETTERS;
+      setTiempoRestante(tiempoInicial);
+    }
+
+    // 2. Iniciar cuenta atrás cuando pasa a PLAYING
+    if (juegoActual?.state === GameState.PLAYING && tiempoRestante > 0) {
+      timer = setInterval(() => {
+        setTiempoRestante(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0; // El móvil llega a 0, pero no procesa el final. Espera a que Supabase cambie el estado.
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => clearInterval(timer);
+  }, [juegoActual?.state, juegoActual?.type]);
 
   // --- 3. NUEVO EFECTO: Cargar resultados cuando termina la ronda ---
   useEffect(() => {
@@ -192,11 +223,11 @@ const PlayerScreen = () => {
 
   // VISTA: Juegos Activos
   if (juegoActual.type === GameType.LETRAS) {
-    return <PlayerLetrasScreen juego={juegoActual} jugador={jugadorActual} />;
+    return <PlayerLetrasScreen juego={juegoActual} jugador={jugadorActual} tiempoRestante={tiempoRestante} />;
   }
 
   if (juegoActual.type === GameType.CIFRAS) {
-    return <PlayerCifrasScreen juego={juegoActual} jugador={jugadorActual} />;
+    return <PlayerCifrasScreen juego={juegoActual} jugador={jugadorActual} tiempoRestante={tiempoRestante} />;
   }
 
   return null;

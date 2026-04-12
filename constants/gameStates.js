@@ -1,3 +1,6 @@
+export const TIME_PER_ROUND_LETTERS = 30;
+export const TIME_PER_ROUND_NUMBERS = 40; 
+
 export const GameState = Object.freeze({
   CREATED: 'CREATED',
   PLAYING: 'PLAYING',
