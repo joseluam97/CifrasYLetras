@@ -6,7 +6,7 @@ import { GameState, GameType, AppRole, RoomState } from '../../constants/gameSta
 import RoomQRCode from './RoomQRCode';
 
 const GameBoard = ({ sala: salaProp, role }) => {
-    const { procesarResultadosRonda, resetearPartida } = useGameStore();
+    const { procesarResultadosRonda, resetearPartida, generateNextRound } = useGameStore();
     const [sala, setSala] = useState(salaProp);
     const [juegoActual, setJuegoActual] = useState(null);
     const [resultadosRonda, setResultadosRonda] = useState([]);
@@ -133,7 +133,6 @@ const GameBoard = ({ sala: salaProp, role }) => {
     useEffect(() => {
         const cargarResultados = async () => {
             if (juegoActual?.state === GameState.END || juegoActual?.state === GameState.RESULT) {
-                const orderByField = juegoActual.type === GameType.LETRAS ? 'result_string' : 'result_numeric';
                 const { data } = await supabase
                     .from('Result_Game')
                     .select('*, Player(name)')
@@ -148,10 +147,6 @@ const GameBoard = ({ sala: salaProp, role }) => {
     }, [juegoActual?.state, juegoActual?.id, juegoActual?.type]);
 
     // --- 5. FUNCIONES ADMIN ---
-    const VOCALES = "AEIOU";
-    const CONSONANTES = "BCDFGHJKLMNPQRSTVWXYZ";
-    const NUMEROS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 25, 50, 75, 100];
-
     const generarSiguienteRonda = async () => {
         if (sala.current_rounds >= sala.total_rounds) {
             if (window.confirm("¿Deseas finalizar la partida?")) {
@@ -162,42 +157,13 @@ const GameBoard = ({ sala: salaProp, role }) => {
             return;
         }
 
-        if (jugadoresConectados.length === 0) return;
+        if (jugadoresConectados.length === 0) {
+            return;
+        }
+
         setLoading(true);
-
-        const nextRoundNumber = (sala.current_rounds || 0) + 1;
-        const esRondaTipoInicial = nextRoundNumber % 2 !== 0;
-        const tipoSiguiente = esRondaTipoInicial ? sala.first_game : (sala.first_game === GameType.LETRAS ? GameType.CIFRAS : GameType.LETRAS);
-
-        let dataArray = [];
-        let valorObjetivo = 0;
-
-        if (tipoSiguiente === GameType.LETRAS) {
-            const numVocales = Math.floor(Math.random() * 4) + 3;
-            const numConsonantes = 10 - numVocales;
-            for (let i = 0; i < numVocales; i++) dataArray.push(VOCALES[Math.floor(Math.random() * VOCALES.length)]);
-            for (let i = 0; i < numConsonantes; i++) dataArray.push(CONSONANTES[Math.floor(Math.random() * CONSONANTES.length)]);
-            dataArray.sort(() => Math.random() - 0.5);
-        } else {
-            for (let i = 0; i < 6; i++) dataArray.push(NUMEROS[Math.floor(Math.random() * NUMEROS.length)]);
-            valorObjetivo = Math.floor(Math.random() * 900) + 100;
-            dataArray = dataArray.map(String);
-        }
-
-        try {
-            await supabase.from('Games').insert([{
-                room: sala.id, identifier: nextRoundNumber, type: tipoSiguiente, data: dataArray, result: valorObjetivo, state: GameState.CREATED
-            }]);
-
-            await supabase.from('Room').update({
-                current_rounds: nextRoundNumber,
-                state: RoomState.PLAYING
-            }).eq('id', sala.id);
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
+        generateNextRound(sala);
+        setLoading(false);
     };
 
     const iniciarTiempo = async () => {

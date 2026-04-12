@@ -2,7 +2,14 @@ import { create } from 'zustand';
 import { supabase } from '../../supabase.js'; // Asegúrate de que la ruta a supabase.js es correcta
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { verificarPalabra } from '../../utils/dictionaryValidator';
-import { RoomState } from '../../constants/gameStates';
+import { GameState, GameType, AppRole, RoomState } from '../../constants/gameStates';
+import { WORDS_LETTERS_COMPLETE } from '../../constants/listWordsStatic.js';
+
+const VOCALES_POOL = "AAAAAEEEEEIIIIOOOOUU".split('');
+const CONSONANTES_POOL = "BBCCCCDDDDFGGHJJLLLLMMMNNNNNPPPQRRRRRSSSSSTTTTVWXYZ".split('');
+
+const NUMEROS_GRANDES = [25, 50, 75, 100];
+const NUMEROS_PEQUENOS = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10];
 
 export const useGameStore = create(
     persist(
@@ -275,6 +282,115 @@ export const useGameStore = create(
                     console.error("Error al resetear partida:", err);
                     set({ isLoading: false });
                     return { success: false, error: err.message };
+                }
+            },
+            generateNextRound: async (sala) => {
+                const nextRoundNumber = (sala.current_rounds || 0) + 1;
+                const esRondaTipoInicial = nextRoundNumber % 2 !== 0;
+                const tipoSiguiente = esRondaTipoInicial ? sala.first_game : (sala.first_game === GameType.LETRAS ? GameType.CIFRAS : GameType.LETRAS);
+
+                let dataArray = [];
+                let valorObjetivo = 0;
+
+                if (tipoSiguiente === GameType.LETRAS) {
+
+                    // --- EVENTO ESPECIAL: 1 de cada 10 veces (aprox 10% de probabilidad) ---
+                    const esPalabraPerfecta = Math.floor(Math.random() * 10) === 0;
+
+                    if (esPalabraPerfecta) {
+                        // Seleccionamos una palabra de 10 letras al azar, la separamos y desordenamos
+                        const palabraElegida = WORDS_LETTERS_COMPLETE[Math.floor(Math.random() * WORDS_LETTERS_COMPLETE.length)];
+                        dataArray = palabraElegida.split('');
+                        dataArray.sort(() => Math.random() - 0.5);
+                    }
+                    // --- GENERACIÓN NORMAL ---
+                    else {
+                        // Bajamos el límite de vocales: ahora serán entre 3 y 5 (antes llegaba a 6, lo cual era excesivo)
+                        const numVocales = Math.floor(Math.random() * 3) + 3;
+                        const numConsonantes = 10 - numVocales;
+
+                        // Diccionario para controlar cuántas veces sale cada letra
+                        const conteoLetras = {};
+
+                        const agregarLetra = (pool) => {
+                            let letra;
+                            let intentos = 0;
+                            let maxPermitido;
+                            do {
+                                letra = pool[Math.floor(Math.random() * pool.length)];
+                                intentos++;
+
+                                // Límites de repetición: 
+                                // Letras raras máximo 1 vez. Letras normales (como A, E, S, R) máximo 2 veces.
+                                maxPermitido = ['W', 'X', 'Y', 'Z', 'K', 'J', 'H', 'Q'].includes(letra) ? 1 : 2;
+
+                                // Si ya hemos alcanzado el máximo de esa letra, el bucle repite y busca otra
+                            } while ((conteoLetras[letra] || 0) >= maxPermitido && intentos < 15);
+
+                            conteoLetras[letra] = (conteoLetras[letra] || 0) + 1;
+                            dataArray.push(letra);
+                        };
+
+                        // Extraemos las letras
+                        for (let i = 0; i < numVocales; i++) agregarLetra(VOCALES_POOL);
+                        for (let i = 0; i < numConsonantes; i++) agregarLetra(CONSONANTES_POOL);
+
+                        // Mezclamos el array final para que las vocales y consonantes no queden separadas
+                        dataArray.sort(() => Math.random() - 0.5);
+                    }
+
+                } else {
+                    // 1. Decidir el "Modo de Juego" (cuántos números grandes queremos)
+                    // Lo más equilibrado y divertido es tener entre 1 y 3 números grandes.
+                    // Usamos un pequeño array de probabilidades donde 2 grandes es lo más común.
+                    const opcionesGrandes = [1, 2, 2, 2, 3, 3];
+                    const cantidadGrandes = opcionesGrandes[Math.floor(Math.random() * opcionesGrandes.length)];
+                    const cantidadPequenos = 6 - cantidadGrandes;
+
+                    // 2. Extraer los números GRANDES sin que se repitan
+                    let grandesDisponibles = [...NUMEROS_GRANDES];
+                    for (let i = 0; i < cantidadGrandes; i++) {
+                        const randomIndex = Math.floor(Math.random() * grandesDisponibles.length);
+                        dataArray.push(grandesDisponibles[randomIndex]);
+                        grandesDisponibles.splice(randomIndex, 1); // Lo sacamos de la bolsa
+                    }
+
+                    // 3. Extraer los números PEQUEÑOS (máximo se repetirán 2 veces, porque así es la bolsa)
+                    let pequenosDisponibles = [...NUMEROS_PEQUENOS];
+                    for (let i = 0; i < cantidadPequenos; i++) {
+                        const randomIndex = Math.floor(Math.random() * pequenosDisponibles.length);
+                        dataArray.push(pequenosDisponibles[randomIndex]);
+                        pequenosDisponibles.splice(randomIndex, 1); // Lo sacamos de la bolsa
+                    }
+
+                    // 4. Barajar el resultado final para que los grandes no aparezcan siempre los primeros en la TV
+                    dataArray.sort(() => Math.random() - 0.5);
+
+                    // 5. Calcular el objetivo.
+                    // Lo ponemos entre 101 y 999. (El 100 se excluye porque si te sale la ficha 100, la ronda termina sin pensar).
+                    valorObjetivo = Math.floor(Math.random() * 899) + 101;
+
+                    // 6. Convertir a String para la UI
+                    dataArray = dataArray.map(String);
+                }
+
+                // --- INSERCIÓN EN BASE DE DATOS ---
+                try {
+                    await supabase.from('Games').insert([{
+                        room: sala.id,
+                        identifier: nextRoundNumber,
+                        type: tipoSiguiente,
+                        data: dataArray,
+                        result: valorObjetivo,
+                        state: GameState.CREATED
+                    }]);
+
+                    await supabase.from('Room').update({
+                        current_rounds: nextRoundNumber,
+                        state: RoomState.PLAYING
+                    }).eq('id', sala.id);
+                } catch (err) {
+                    console.error("Error al generar ronda:", err);
                 }
             }
         }),

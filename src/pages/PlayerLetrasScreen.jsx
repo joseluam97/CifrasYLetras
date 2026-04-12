@@ -45,8 +45,8 @@ const PlayerLetrasScreen = ({ juego, jugador }) => {
   const enviarPalabra = async () => {
     const palabraString = palabraActual.map(l => l.char).join('');
     
-    if (palabraString.length <= mejorPalabraEnviada.length) {
-      alert("¡Ya has enviado una palabra de igual o mayor longitud!");
+    if (palabraString.length <= mejorPalabraEnviada.length - 1) {
+      alert("¡Ya has enviado una palabra de mayor longitud!");
       return;
     }
 
