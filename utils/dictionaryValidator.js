@@ -9,31 +9,39 @@ const compararStrings = (str1, str2) => {
 };
 
 export const verificarPalabraRAE = async (palabra) => {
+  
+      console.log("verificarPalabraRAE: ", palabra);
+  
   if (!palabra || palabra.trim().length === 0) return false;
 
   try {
+    const proxy = "https://corsproxy.io/?";
+    const urlBase = "https://rae-api.com/api/words/";
+    
     // Usamos una API gratuita de diccionario en español
-    const response = await fetch(`https://corsproxy.io/?https://rae-api.com/api/words/${palabra.toLowerCase()}`);
+    let response = await fetch(`${proxy}${urlBase}${palabra}`);
+    
+      console.log("URL: ", `${proxy}${urlBase}${palabra}`);
+    //const response = await fetch(`https://corsproxy.io/?https://rae-api.com/api/words/${palabra.toLowerCase()}`);
 
-    console.log(`Verificando la palabra "${palabra}"... Respuesta:`, response);
+    let data = await response.json();
+    
+    console.log(`Verificando la palabra "${palabra}"... Respuesta:`, data);
     // Si la respuesta es OK (200), la palabra existe
-    if (response.ok) {
-      return true;
+    
+    if (!data.ok && data.suggestions && data.suggestions.length > 0) {
+      console.log(`No encontrada. Reintentando con sugerencia: ${data.suggestions[0]}`);
+      
+      // Segunda llamada con la primera sugerencia
+      response = await fetch(`${proxy}${urlBase}${data.suggestions[0]}`);
+      data = await response.json();
     }
 
-    // Sino comprobar el 0 de la alternativa con tilde (ej: "via" -> "vía")
-    const ltResponse = await fetch(`https://corsproxy.io/?https://api.languagetool.org/v2/check?text=${palabra}&language=es`);
-    const ltData = await ltResponse.json();
-    if (ltData.matches && ltData.matches.length > 0 && ltData.matches[0].replacements && ltData.matches[0].replacements.length > 0) {
-      const palabraCorregida = ltData.matches[0].replacements[0].value;
-      if (compararStrings(palabra, palabraCorregida)) {
-        console.log(`Corrigiendo ${palabra} a ${palabraCorregida}...`);
-        const finalResponse = await fetch(`https://corsproxy.io/?https://rae-api.com/api/words/${palabraCorregida.toLowerCase()}`);
-
-        if (finalResponse.ok) {
-          return true;
-        }
-      }
+    if (data.ok) {
+      console.log("Palabra válida encontrada:", data.word);
+      return data;
+    } else {
+      throw new Error("Palabra no encontrada incluso en sugerencias");
     }
 
     // Si es 404, la palabra no fue encontrada
