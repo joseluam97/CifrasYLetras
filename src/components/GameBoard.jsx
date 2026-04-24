@@ -15,6 +15,8 @@ const GameBoard = ({ sala: salaProp, role }) => {
     const [loading, setLoading] = useState(false);
     const [tiempoRestante, setTiempoRestante] = useState(TIME_PER_ROUND_LETTERS);
     const [jugadoresConectados, setJugadoresConectados] = useState([]);
+    const [jugadorEnEdicion, setJugadorEnEdicion] = useState(null);
+    const [puntosFormulario, setPuntosFormulario] = useState(0);
 
     useEffect(() => { setSala(salaProp); }, [salaProp]);
 
@@ -142,6 +144,21 @@ const GameBoard = ({ sala: salaProp, role }) => {
         await supabase.from('Games').update({ state: GameState.PLAYING }).eq('id', juegoActual.id);
     };
 
+    // --- FUNCIÓN SEGURA PARA EDITAR PUNTOS ---
+    const guardarEdicionPuntos = async (jugador) => {
+        const nuevosPuntos = parseInt(puntosFormulario) || 0;
+
+        // DOBLE VERIFICACIÓN: Preguntamos antes de guardar
+        if (window.confirm(`¿Confirmas que los puntos de ${jugador.name} pasarán a ser ${nuevosPuntos}?`)) {
+            await supabase
+                .from('Player')
+                .update({ points: Math.max(0, nuevosPuntos) }) // Math.max evita números negativos
+                .eq('id', jugador.id);
+
+            setJugadorEnEdicion(null); // Cerramos el modo edición
+        }
+    };
+
     // ==========================================
     // VISTAS
     // ==========================================
@@ -163,6 +180,8 @@ const GameBoard = ({ sala: salaProp, role }) => {
         return (
             <div className="card shadow-sm p-4 text-center mt-4 border-primary">
                 <h4 className="fw-bold text-primary mb-4">Panel de Control</h4>
+
+                {/* CONTROLES PRINCIPALES DEL JUEGO */}
                 {!juegoActual || juegoActual.state === GameState.END ? (
                     <div>
                         <p className="text-muted mb-4">Ronda: <strong>{sala?.current_rounds} de {sala?.total_rounds}</strong></p>
@@ -181,6 +200,64 @@ const GameBoard = ({ sala: salaProp, role }) => {
                         {juegoActual.state === GameState.CREATED && <button className="btn btn-success btn-lg py-3 w-100 fw-bold animate__animated animate__pulse animate__infinite" onClick={iniciarTiempo}>▶ Iniciar Tiempo</button>}
                         {juegoActual.state === GameState.PLAYING && <button className="btn btn-warning btn-lg py-3 w-100 fw-bold" disabled>⏳ Jugando...</button>}
                         {juegoActual.state === GameState.RESULT && <button className="btn btn-secondary btn-lg py-3 w-100 fw-bold" disabled>Calculando...</button>}
+                    </div>
+                )}
+
+                {/* NUEVA SECCIÓN: GESTIÓN DE PUNTOS SEGURA */}
+                {jugadoresConectados.length > 0 && (
+                    <div className="mt-5 pt-3 border-top text-start">
+                        <h6 className="fw-bold text-secondary mb-3">🛠️ Gestión de Puntos</h6>
+                        <div className="list-group shadow-sm">
+                            {jugadoresConectados.map((jugador) => (
+                                <div key={jugador.id} className="list-group-item d-flex justify-content-between align-items-center py-2 px-3 bg-light">
+                                    <span className="fw-bold text-dark text-truncate" style={{ maxWidth: "40%" }}>
+                                        {jugador.name}
+                                    </span>
+
+                                    {/* MODO EDICIÓN VS MODO VISTA */}
+                                    {jugadorEnEdicion === jugador.id ? (
+                                        <div className="d-flex align-items-center gap-2 animate__animated animate__fadeIn">
+                                            <input
+                                                type="number"
+                                                className="form-control form-control-sm text-center fw-bold text-primary shadow-sm"
+                                                style={{ width: "80px" }}
+                                                value={puntosFormulario}
+                                                onChange={(e) => setPuntosFormulario(e.target.value)}
+                                            />
+                                            <button
+                                                className="btn btn-success btn-sm fw-bold shadow-sm"
+                                                onClick={() => guardarEdicionPuntos(jugador)}
+                                                title="Guardar"
+                                            >
+                                                ✓
+                                            </button>
+                                            <button
+                                                className="btn btn-danger btn-sm fw-bold shadow-sm"
+                                                onClick={() => setJugadorEnEdicion(null)}
+                                                title="Cancelar"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="d-flex align-items-center gap-3">
+                                            <span className="fw-bold fs-5 text-primary">
+                                                {jugador.points} pts
+                                            </span>
+                                            <button
+                                                className="btn btn-outline-secondary btn-sm shadow-sm"
+                                                onClick={() => {
+                                                    setJugadorEnEdicion(jugador.id);
+                                                    setPuntosFormulario(jugador.points || 0);
+                                                }}
+                                            >
+                                                ✏️ Editar
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>
